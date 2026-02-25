@@ -1,6 +1,6 @@
 """
 Bot de Telegram para Reportes de Choferes
-Versión optimizada - Solo datos
+Versión con cálculo automático de kilometraje total
 Optimizado para Render.com
 """
 
@@ -74,6 +74,7 @@ def inicializar_sheet():
             'Placa',
             'Kilometraje Inicial',
             'Kilometraje Final',
+            'Total de Kilómetros',
             'Comentarios'
         ]
         sheet.append_row(headers)
@@ -90,6 +91,7 @@ def guardar_reporte(datos):
             datos['placa'],
             datos['km_inicial'],
             datos['km_final'],
+            datos['total_km'],
             datos['comentarios']
         ]
         sheet.append_row(fila)
@@ -107,6 +109,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Para llenar el reporte debes tener:\n"
         "• Kilometraje inicial\n"
         "• Kilometraje final\n\n"
+        "El bot calculará automáticamente el total de kilómetros recorridos.\n\n"
         "Usa /reporte para comenzar."
     )
 
@@ -126,17 +129,68 @@ async def placa(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return KM_INICIAL
 
 async def km_inicial(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['km_inicial'] = update.message.text
-    await update.message.reply_text("Escribe el kilometraje FINAL:")
-    return KM_FINAL
+    km_text = update.message.text.strip()
+    
+    # Validar que sea un número
+    try:
+        km_numero = float(km_text.replace(',', ''))
+        context.user_data['km_inicial'] = km_text
+        context.user_data['km_inicial_numero'] = km_numero
+        await update.message.reply_text("Escribe el kilometraje FINAL:")
+        return KM_FINAL
+    except ValueError:
+        await update.message.reply_text(
+            "⚠️ Por favor, escribe solo números.\n"
+            "Ejemplo: 1000 o 1000.5\n\n"
+            "Escribe el kilometraje INICIAL:"
+        )
+        return KM_INICIAL
 
 async def km_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['km_final'] = update.message.text
-    await update.message.reply_text(
-        "Agrega comentarios.\n"
-        "Si no tienes comentarios escribe: sin comentarios"
-    )
-    return COMENTARIOS
+    km_text = update.message.text.strip()
+    
+    # Validar que sea un número
+    try:
+        km_numero = float(km_text.replace(',', ''))
+        context.user_data['km_final'] = km_text
+        context.user_data['km_final_numero'] = km_numero
+        
+        # Calcular el total de kilómetros
+        km_inicial = context.user_data['km_inicial_numero']
+        total_km = km_numero - km_inicial
+        
+        # Validar que el km final sea mayor que el inicial
+        if total_km < 0:
+            await update.message.reply_text(
+                "⚠️ El kilometraje final no puede ser menor que el inicial.\n\n"
+                f"Kilometraje Inicial: {context.user_data['km_inicial']}\n"
+                f"Kilometraje Final ingresado: {km_text}\n\n"
+                "Por favor, escribe el kilometraje FINAL correcto:"
+            )
+            return KM_FINAL
+        
+        # Guardar el total calculado
+        context.user_data['total_km'] = str(round(total_km, 2))
+        
+        # Mostrar el cálculo antes de pedir comentarios
+        await update.message.reply_text(
+            f"📊 Cálculo automático:\n\n"
+            f"KM Final: {km_text}\n"
+            f"KM Inicial: {context.user_data['km_inicial']}\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"✅ Total recorrido: {context.user_data['total_km']} km\n\n"
+            "Ahora agrega comentarios.\n"
+            "Si no tienes comentarios escribe: sin comentarios"
+        )
+        return COMENTARIOS
+        
+    except ValueError:
+        await update.message.reply_text(
+            "⚠️ Por favor, escribe solo números.\n"
+            "Ejemplo: 1150 o 1150.5\n\n"
+            "Escribe el kilometraje FINAL:"
+        )
+        return KM_FINAL
 
 async def comentarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['comentarios'] = update.message.text
@@ -155,7 +209,8 @@ async def comentarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"• Nombre: {context.user_data['nombre']}\n"
                 f"• Placa: {context.user_data['placa']}\n"
                 f"• KM Inicial: {context.user_data['km_inicial']}\n"
-                f"• KM Final: {context.user_data['km_final']}\n\n"
+                f"• KM Final: {context.user_data['km_final']}\n"
+                f"• Total Recorrido: {context.user_data['total_km']} km\n\n"
                 "Usa /reporte para registrar otro."
             )
         else:
@@ -186,7 +241,8 @@ async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/start - Iniciar el bot\n"
         "/reporte - Crear un nuevo reporte\n"
         "/ayuda - Mostrar esta ayuda\n"
-        "/cancelar - Cancelar reporte actual"
+        "/cancelar - Cancelar reporte actual\n\n"
+        "💡 El bot calcula automáticamente el total de kilómetros recorridos."
     )
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
