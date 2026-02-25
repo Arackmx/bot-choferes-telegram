@@ -4,6 +4,9 @@ Optimizado para Render.com
 Registra inicio/fin de jornada, datos del vehículo y fotos
 Sube información a Google Sheets y fotos a Google Drive
 """
+import os
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
 
 import logging
 import os
@@ -29,7 +32,21 @@ def run_health_server():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
     server.serve_forever()
+# ===== SERVIDOR FALSO PARA RENDER =====
 
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'Bot activo')
+
+def run_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), Handler)
+    print(f"Servidor HTTP corriendo en puerto {port}")
+    server.serve_forever()
+
+threading.Thread(target=run_server, daemon=True).start()
 
 # ==================== CONFIGURACIÓN ====================
 # Estas variables se cargarán desde las variables de entorno en Render
