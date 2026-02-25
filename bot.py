@@ -429,7 +429,11 @@ def main():
     # Iniciar servidor para que Render detecte puerto
     threading.Thread(target=run_health_server, daemon=True).start()
 
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    import asyncio
 
-    if __name__ == '__main__':
-        main()
+    async def main():
+        print("Bot iniciado correctamente")
+        await application.run_polling()
+
+    if __name__ == "__main__":
+        asyncio.run(main())
