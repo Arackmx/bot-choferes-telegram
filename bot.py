@@ -1,14 +1,14 @@
 """
 Bot de Telegram para Reportes de Choferes
 Versión con cálculo automático de kilometraje total
-Optimizado para Render.com
+Optimizado para Render.com con health check mejorado
 """
 
 import os
 import json
 import logging
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import asyncio
+from aiohttp import web
 from datetime import datetime
 
 from telegram import Update, ReplyKeyboardRemove
@@ -24,24 +24,12 @@ from telegram.ext import (
 import gspread
 from google.oauth2.service_account import Credentials
 
-# ==================== SERVIDOR PARA RENDER ====================
-
-class HealthCheckHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is running")
-
-def run_health_server():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
-    server.serve_forever()
-
 # ==================== CONFIGURACIÓN ====================
 
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 GOOGLE_SHEET_ID = os.environ.get('GOOGLE_SHEET_ID')
 GOOGLE_CREDENTIALS_JSON = os.environ.get('GOOGLE_CREDENTIALS_JSON')
+PORT = int(os.environ.get("PORT", 10000))
 
 # ==================== LOGGING ====================
 
@@ -101,6 +89,24 @@ def guardar_reporte(datos):
         logger.error(f"Error guardando en Sheets: {e}")
         return False
 
+# ==================== SERVIDOR WEB PARA RENDER ====================
+
+async def health_check(request):
+    """Health check endpoint para que Render sepa que el servicio está vivo"""
+    return web.Response(text="Bot is running OK")
+
+async def start_web_server():
+    """Inicia el servidor web en el puerto requerido por Render"""
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', PORT)
+    await site.start()
+    logger.info(f"🌐 Servidor web iniciado en puerto {PORT}")
+
 # ==================== BOT ====================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -131,7 +137,6 @@ async def placa(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def km_inicial(update: Update, context: ContextTypes.DEFAULT_TYPE):
     km_text = update.message.text.strip()
     
-    # Validar que sea un número
     try:
         km_numero = float(km_text.replace(',', ''))
         context.user_data['km_inicial'] = km_text
@@ -149,17 +154,14 @@ async def km_inicial(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def km_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
     km_text = update.message.text.strip()
     
-    # Validar que sea un número
     try:
         km_numero = float(km_text.replace(',', ''))
         context.user_data['km_final'] = km_text
         context.user_data['km_final_numero'] = km_numero
         
-        # Calcular el total de kilómetros
         km_inicial = context.user_data['km_inicial_numero']
         total_km = km_numero - km_inicial
         
-        # Validar que el km final sea mayor que el inicial
         if total_km < 0:
             await update.message.reply_text(
                 "⚠️ El kilometraje final no puede ser menor que el inicial.\n\n"
@@ -169,10 +171,8 @@ async def km_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return KM_FINAL
         
-        # Guardar el total calculado
         context.user_data['total_km'] = str(round(total_km, 2))
         
-        # Mostrar el cálculo antes de pedir comentarios
         await update.message.reply_text(
             f"📊 Cálculo automático:\n\n"
             f"KM Final: {km_text}\n"
@@ -199,7 +199,6 @@ async def comentarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("💾 Guardando reporte...")
 
     try:
-        # Guardar directamente sin usar loop
         exito = guardar_reporte(context.user_data)
 
         if exito:
@@ -216,7 +215,7 @@ async def comentarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text(
                 "❌ Error al guardar el reporte.\n"
-                "Verifica que el Sheet esté compartido con el service account."
+                "Contacta al administrador."
             )
 
     except Exception as e:
@@ -250,8 +249,9 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 # ==================== MAIN ====================
 
-def main():
-
+async def main():
+    """Función principal que inicia tanto el servidor web como el bot"""
+    
     if not TELEGRAM_TOKEN or not GOOGLE_SHEET_ID or not GOOGLE_CREDENTIALS_JSON:
         logger.error("❌ Faltan variables de entorno.")
         return
@@ -263,6 +263,10 @@ def main():
         logger.error(f"❌ Error al inicializar Google Sheets: {e}")
         return
 
+    # Iniciar servidor web
+    await start_web_server()
+
+    # Configurar bot
     application = Application.builder().token(TELEGRAM_TOKEN).build()
 
     conv_handler = ConversationHandler(
@@ -283,17 +287,19 @@ def main():
     application.add_handler(conv_handler)
     application.add_error_handler(error_handler)
 
-    # Iniciar servidor de salud para Render
-    threading.Thread(target=run_health_server, daemon=True).start()
-    logger.info("🚀 Servidor de salud iniciado")
-
     logger.info("🤖 Bot iniciado correctamente")
     logger.info("Bot funcionando 24/7 en Render.com")
     
-    application.run_polling(
+    # Inicializar y ejecutar el bot
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling(
         allowed_updates=Update.ALL_TYPES,
         drop_pending_updates=True
     )
+    
+    # Mantener el bot corriendo
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
