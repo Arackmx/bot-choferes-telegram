@@ -77,6 +77,9 @@ def inicializar_sheet():
             'Comentarios'
         ]
         sheet.append_row(headers)
+        logger.info("Encabezados creados en Google Sheets")
+    else:
+        logger.info("Google Sheets ya inicializado")
 
 def guardar_reporte(datos):
     try:
@@ -90,6 +93,7 @@ def guardar_reporte(datos):
             datos['comentarios']
         ]
         sheet.append_row(fila)
+        logger.info(f"Reporte guardado para {datos['nombre']}")
         return True
     except Exception as e:
         logger.error(f"Error guardando en Sheets: {e}")
@@ -138,28 +142,34 @@ async def comentarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['comentarios'] = update.message.text
     context.user_data['fecha_hora'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    try:
-        loop = context.application.loop
+    await update.message.reply_text("💾 Guardando reporte...")
 
-        exito = await loop.run_in_executor(
-            None,
-            guardar_reporte,
-            context.user_data
-        )
+    try:
+        # Guardar directamente sin usar loop
+        exito = guardar_reporte(context.user_data)
 
         if exito:
             await update.message.reply_text(
                 "✅ Reporte guardado correctamente.\n\n"
+                f"📋 Resumen:\n"
+                f"• Nombre: {context.user_data['nombre']}\n"
+                f"• Placa: {context.user_data['placa']}\n"
+                f"• KM Inicial: {context.user_data['km_inicial']}\n"
+                f"• KM Final: {context.user_data['km_final']}\n\n"
                 "Usa /reporte para registrar otro."
             )
         else:
             await update.message.reply_text(
-                "❌ Error al guardar el reporte."
+                "❌ Error al guardar el reporte.\n"
+                "Verifica que el Sheet esté compartido con el service account."
             )
 
     except Exception as e:
-        logger.error(f"Error async guardando: {e}")
-        await update.message.reply_text("❌ Error inesperado al guardar.")
+        logger.error(f"Error guardando: {e}")
+        await update.message.reply_text(
+            f"❌ Error inesperado: {str(e)}\n"
+            "Contacta al administrador."
+        )
 
     return ConversationHandler.END
 
@@ -172,7 +182,11 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "/start\n/reporte\n/ayuda\n/cancelar"
+        "📖 Comandos disponibles:\n\n"
+        "/start - Iniciar el bot\n"
+        "/reporte - Crear un nuevo reporte\n"
+        "/ayuda - Mostrar esta ayuda\n"
+        "/cancelar - Cancelar reporte actual"
     )
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
@@ -183,10 +197,15 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 def main():
 
     if not TELEGRAM_TOKEN or not GOOGLE_SHEET_ID or not GOOGLE_CREDENTIALS_JSON:
-        logger.error("Faltan variables de entorno.")
+        logger.error("❌ Faltan variables de entorno.")
         return
 
-    inicializar_sheet()
+    try:
+        inicializar_sheet()
+        logger.info("✅ Google Sheets inicializado correctamente")
+    except Exception as e:
+        logger.error(f"❌ Error al inicializar Google Sheets: {e}")
+        return
 
     application = Application.builder().token(TELEGRAM_TOKEN).build()
 
@@ -208,8 +227,13 @@ def main():
     application.add_handler(conv_handler)
     application.add_error_handler(error_handler)
 
+    # Iniciar servidor de salud para Render
     threading.Thread(target=run_health_server, daemon=True).start()
+    logger.info("🚀 Servidor de salud iniciado")
 
+    logger.info("🤖 Bot iniciado correctamente")
+    logger.info("Bot funcionando 24/7 en Render.com")
+    
     application.run_polling(
         allowed_updates=Update.ALL_TYPES,
         drop_pending_updates=True
