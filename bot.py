@@ -189,6 +189,7 @@ def main():
             COMENTARIOS: [MessageHandler(filters.TEXT & ~filters.COMMAND, comentarios)],
         },
         fallbacks=[CommandHandler('cancelar', cancelar)],
+        allow_reentry=True,
     )
 
     application.add_handler(CommandHandler("start", start))
@@ -198,7 +199,10 @@ def main():
 
     threading.Thread(target=run_health_server, daemon=True).start()
 
-    application.run_polling()
+    application.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True
+    )
 
 if __name__ == "__main__":
     main()
