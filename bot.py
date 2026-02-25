@@ -15,6 +15,21 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 import json
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import os
+
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running")
+
+def run_health_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    server.serve_forever()
+
 
 # ==================== CONFIGURACIÓN ====================
 # Estas variables se cargarán desde las variables de entorno en Render
@@ -393,7 +408,11 @@ def main():
     # Iniciar el bot
     logger.info("🤖 Bot iniciado correctamente en Render.com")
     logger.info("Bot funcionando 24/7...")
+
+    # Iniciar servidor para que Render detecte puerto
+    threading.Thread(target=run_health_server, daemon=True).start()
+
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
-if __name__ == '__main__':
+    if __name__ == '__main__':
     main()
