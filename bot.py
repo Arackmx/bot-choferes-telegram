@@ -138,17 +138,28 @@ async def comentarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['comentarios'] = update.message.text
     context.user_data['fecha_hora'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    exito = guardar_reporte(context.user_data)
+    try:
+        loop = context.application.loop
 
-    if exito:
-        await update.message.reply_text(
-            "✅ Reporte guardado correctamente.\n\n"
-            "Usa /reporte para registrar otro."
+        exito = await loop.run_in_executor(
+            None,
+            guardar_reporte,
+            context.user_data
         )
-    else:
-        await update.message.reply_text(
-            "❌ Error al guardar el reporte."
-        )
+
+        if exito:
+            await update.message.reply_text(
+                "✅ Reporte guardado correctamente.\n\n"
+                "Usa /reporte para registrar otro."
+            )
+        else:
+            await update.message.reply_text(
+                "❌ Error al guardar el reporte."
+            )
+
+    except Exception as e:
+        logger.error(f"Error async guardando: {e}")
+        await update.message.reply_text("❌ Error inesperado al guardar.")
 
     return ConversationHandler.END
 
@@ -165,7 +176,7 @@ async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    logger.error(f"Error: {context.error}")
+    logger.error(f"Error global: {context.error}")
 
 # ==================== MAIN ====================
 
